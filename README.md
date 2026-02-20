@@ -8,7 +8,7 @@ A simple FastAPI service that takes a public GitHub repository URL and returns a
 
 ```bash
 git clone <repo-url>
-cd Nebius--API
+cd HayLahav-Nebius-API
 ```
 
 ### 2. Create and activate a virtual environment

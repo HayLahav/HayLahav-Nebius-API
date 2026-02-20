@@ -3,6 +3,7 @@ import re
 import json
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="GitHub Repository Summarizer")
@@ -150,7 +151,7 @@ Respond with ONLY a JSON object, no markdown, no extra text."""
         "model": NEBIUS_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
-        "max_tokens": 512,
+        "max_tokens": 800,
     }
 
     try:
@@ -186,31 +187,31 @@ def summarize(request: SummarizeRequest):
     try:
         owner, repo = parse_github_url(request.github_url)
     except ValueError as e:
-        return {"status": "error", "message": str(e)}, 400
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
 
     try:
         data = collect_repo_content(owner, repo)
     except Exception as e:
-        return {"status": "error", "message": f"Failed to fetch repository: {e}"}, 502
+        return JSONResponse(status_code=502, content={"status": "error", "message": f"Failed to fetch repository: {e}"})
 
     if not data["files"] and not data["directory"]:
-        return {
+        return JSONResponse(status_code=404, content={
             "status": "error",
             "message": "Repository not found or is empty.",
-        }, 404
+        })
 
     context = build_context(data)
 
     try:
         result = call_nebius(context, owner, repo)
     except EnvironmentError as e:
-        return {"status": "error", "message": str(e)}, 500
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
     except PermissionError as e:
-        return {"status": "error", "message": str(e)}, 401
+        return JSONResponse(status_code=401, content={"status": "error", "message": str(e)})
     except (ConnectionError, RuntimeError) as e:
-        return {"status": "error", "message": str(e)}, 502
+        return JSONResponse(status_code=502, content={"status": "error", "message": str(e)})
     except json.JSONDecodeError:
-        return {"status": "error", "message": "LLM returned invalid JSON."}, 502
+        return JSONResponse(status_code=502, content={"status": "error", "message": "LLM returned invalid JSON."})
 
     return {
         "summary": result.get("summary", ""),

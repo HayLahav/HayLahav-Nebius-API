@@ -2,13 +2,14 @@ import os
 import re
 import json
 import httpx
+from openai import OpenAI, AuthenticationError, APIConnectionError, APIStatusError
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="GitHub Repository Summarizer")
 
-NEBIUS_API_URL = "https://api.studio.nebius.com/v1/chat/completions"
+NEBIUS_BASE_URL = "https://api.studio.nebius.com/v1/"
 NEBIUS_MODEL = "meta-llama/Meta-Llama-3.1-70B-Instruct"
 
 RAW_BASE = "https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
@@ -137,6 +138,8 @@ def call_nebius(context: str, owner: str, repo: str) -> dict:
     if not api_key:
         raise EnvironmentError("NEBIUS_API_KEY environment variable is not set.")
 
+    client = OpenAI(base_url=NEBIUS_BASE_URL, api_key=api_key)
+
     prompt = f"""You are a code analyst. Analyze the following GitHub repository context for {owner}/{repo} and return ONLY valid JSON with exactly these fields:
 - "summary": a 2-4 sentence description of what the project does
 - "technologies": a JSON array of main languages, frameworks, and libraries used
@@ -147,33 +150,21 @@ Repository context:
 
 Respond with ONLY a JSON object, no markdown, no extra text."""
 
-    payload = {
-        "model": NEBIUS_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "max_tokens": 800,
-    }
-
     try:
-        resp = httpx.post(
-            NEBIUS_API_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=30,
+        response = client.chat.completions.create(
+            model=NEBIUS_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            max_tokens=800,
         )
-    except httpx.RequestError as e:
-        raise ConnectionError(f"Failed to reach Nebius API: {e}")
-
-    if resp.status_code == 401:
+    except AuthenticationError:
         raise PermissionError("Invalid NEBIUS_API_KEY.")
-    if resp.status_code != 200:
-        raise RuntimeError(f"Nebius API returned {resp.status_code}: {resp.text[:200]}")
+    except APIConnectionError as e:
+        raise ConnectionError(f"Failed to reach Nebius API: {e}")
+    except APIStatusError as e:
+        raise RuntimeError(f"Nebius API returned {e.status_code}: {e.message}")
 
-    raw = resp.json()
-    text = raw["choices"][0]["message"]["content"].strip()
+    text = response.choices[0].message.content.strip()
 
     # Strip markdown code fences if present
     text = re.sub(r"^```(?:json)?\s*", "", text)

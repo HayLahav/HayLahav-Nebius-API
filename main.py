@@ -28,7 +28,7 @@ PRIORITY_FILES = [
     "setup.cfg",
 ]
 
-MAX_CONTENT_CHARS = 6000
+MAX_CONTENT_CHARS = 12000
 
 
 class SummarizeRequest(BaseModel):
@@ -138,7 +138,11 @@ def call_nebius(context: str, owner: str, repo: str) -> dict:
     if not api_key:
         raise EnvironmentError("NEBIUS_API_KEY environment variable is not set.")
 
-    client = OpenAI(base_url=NEBIUS_BASE_URL, api_key=api_key)
+    # Updated to the Token Factory endpoint
+    client = OpenAI(
+        base_url="https://api.tokenfactory.nebius.com/v1/", 
+        api_key=api_key
+    )
 
     prompt = f"""You are a code analyst. Analyze the following GitHub repository context for {owner}/{repo} and return ONLY valid JSON with exactly these fields:
 - "summary": a 2-4 sentence description of what the project does
@@ -152,8 +156,18 @@ Respond with ONLY a JSON object, no markdown, no extra text."""
 
     try:
         response = client.chat.completions.create(
-            model=NEBIUS_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            model="meta-llama/Meta-Llama-3.1-8B-Instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
             temperature=0.2,
             max_tokens=800,
         )

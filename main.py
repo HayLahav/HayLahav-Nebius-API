@@ -39,9 +39,11 @@ def parse_github_url(url: str) -> tuple[str, str]:
     pattern = r"https?://github\.com/([^/]+)/([^/?\s#]+)"
     match = re.match(pattern, url.strip())
     if not match:
-        raise ValueError("Invalid GitHub URL. Expected format: https://github.com/owner/repo")
+        raise ValueError("Invalid GitHub URL...")
     owner = match.group(1)
     repo = match.group(2).rstrip("/")
+    if repo.endswith(".git"):
+        repo = repo[:-4]
     return owner, repo
 
 

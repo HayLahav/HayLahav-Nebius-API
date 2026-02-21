@@ -263,11 +263,20 @@ Respond with ONLY a JSON object, no markdown, no extra text."""
 
     text = response.choices[0].message.content.strip()
 
-    # Strip markdown code fences if present
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
+    # Robust JSON extraction: find the first '{' and last '}'
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1:
+        json_text = text[start_idx : end_idx + 1]
+    else:
+        json_text = text
 
-    return json.loads(text)
+    try:
+        return json.loads(json_text)
+    except json.JSONDecodeError:
+        print(f"DEBUG: Failed to parse LLM response as JSON. Raw text:\n{text}")
+        raise
 
 
 @app.post("/summarize")

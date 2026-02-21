@@ -138,8 +138,9 @@ def call_nebius(context: str, owner: str, repo: str) -> dict:
     if not api_key:
         raise EnvironmentError("NEBIUS_API_KEY environment variable is not set.")
 
+    # Updated to the Token Factory endpoint
     client = OpenAI(
-        base_url=NEBIUS_BASE_URL,
+        base_url="https://api.tokenfactory.nebius.com/v1/", 
         api_key=api_key
     )
 
@@ -155,7 +156,7 @@ Respond with ONLY a JSON object, no markdown, no extra text."""
 
     try:
         response = client.chat.completions.create(
-            model=NEBIUS_MODEL,
+            model="meta-llama/Meta-Llama-3.1-8B-Instruct",
             messages=[
                 {
                     "role": "user",

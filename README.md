@@ -68,6 +68,7 @@ The API will be available at:
 ------------------------------------------------------------------------
 
 ## 📌 Usage
+Note: Keep the server running in your first terminal. Open a new terminal window (or tab) to run the following test commands.
 
 ### Using PowerShell
 

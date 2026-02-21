@@ -13,7 +13,7 @@ NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 NEBIUS_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 
 RAW_BASE = "https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
-GITHUB_REPO_URL = "https://github.com/{owner}/{repo}"
+GITHUB_API_BASE = "https://api.github.com"
 
 PRIORITY_FILES = [
     "README.md",
@@ -28,7 +28,25 @@ PRIORITY_FILES = [
     "setup.cfg",
 ]
 
+SOURCE_EXTENSIONS = {
+    ".py", ".js", ".ts", ".go", ".rs", ".java", ".rb",
+    ".cpp", ".c", ".cs", ".swift", ".kt", ".scala", ".php",
+    ".vue", ".jsx", ".tsx",
+}
+
+# Common entry-point filenames tried first when sampling source files
+SOURCE_ENTRY_POINTS = [
+    "main.py", "app.py", "server.py", "index.py",
+    "main.js", "app.js", "server.js", "index.js",
+    "main.ts", "app.ts", "server.ts", "index.ts",
+    "main.go",
+    "main.rs",
+    "main.java",
+    "main.rb", "app.rb",
+]
+
 MAX_CONTENT_CHARS = 12000
+MAX_SOURCE_FILE_CHARS = 3000  # cap per sampled source file
 
 
 class SummarizeRequest(BaseModel):
@@ -45,60 +63,111 @@ def parse_github_url(url: str) -> tuple[str, str]:
     return owner, repo
 
 
-def fetch_raw_file(owner: str, repo: str, path: str, branch: str = "main") -> str | None:
-    for b in [branch, "master"]:
-        url = RAW_BASE.format(owner=owner, repo=repo, branch=b, path=path)
-        try:
-            resp = httpx.get(url, timeout=10, follow_redirects=True)
-            if resp.status_code == 200:
-                return resp.text
-        except httpx.RequestError:
-            continue
+def _github_headers() -> dict:
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    headers = {"Accept": "application/vnd.github+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def fetch_repo_metadata(owner: str, repo: str) -> dict:
+    """
+    Returns {"default_branch": str, "entries": [{"name": str, "type": "file"|"dir"}, ...]}.
+    Uses the GitHub REST API instead of HTML scraping.
+    """
+    headers = _github_headers()
+
+    # 1. Resolve the default branch
+    default_branch = "main"
+    try:
+        resp = httpx.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}",
+            headers=headers,
+            timeout=10,
+            follow_redirects=True,
+        )
+        if resp.status_code == 200:
+            default_branch = resp.json().get("default_branch", "main")
+    except httpx.RequestError:
+        pass
+
+    # 2. List root directory contents
+    entries: list[dict] = []
+    try:
+        resp = httpx.get(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/",
+            headers=headers,
+            timeout=10,
+            follow_redirects=True,
+        )
+        if resp.status_code == 200:
+            for item in resp.json():
+                entries.append({"name": item["name"], "type": item["type"]})
+    except (httpx.RequestError, ValueError):
+        pass
+
+    return {"default_branch": default_branch, "entries": entries}
+
+
+def fetch_raw_file(owner: str, repo: str, path: str, branch: str) -> str | None:
+    url = RAW_BASE.format(owner=owner, repo=repo, branch=branch, path=path)
+    try:
+        resp = httpx.get(url, timeout=10, follow_redirects=True)
+        if resp.status_code == 200:
+            return resp.text
+    except httpx.RequestError:
+        pass
     return None
 
 
-def fetch_directory_listing(owner: str, repo: str) -> list[str]:
-    url = GITHUB_REPO_URL.format(owner=owner, repo=repo)
-    try:
-        resp = httpx.get(url, timeout=10, follow_redirects=True)
-        if resp.status_code != 200:
-            return []
-    except httpx.RequestError:
-        return []
+def pick_source_files(entries: list[dict]) -> list[str]:
+    """
+    From root directory entries, return up to 2 source file paths to sample.
+    Prefers known entry-point names; falls back to any file with a source extension.
+    """
+    file_names = {e["name"] for e in entries if e["type"] == "file"}
 
-    # Extract top-level file/dir names from the repo page HTML
-    entries = re.findall(
-        r'aria-label="([^"]+?)(?:,\s*(?:directory|file))?"',
-        resp.text,
-    )
-    # Also try the link-based approach as fallback
-    if not entries:
-        entries = re.findall(
-            r'href="/{owner}/{repo}/(?:tree|blob)/[^/]+/([^/"?]+)"'.format(
-                owner=re.escape(owner), repo=re.escape(repo)
-            ),
-            resp.text,
-        )
-    seen = set()
-    result = []
-    for e in entries:
-        name = e.strip()
-        if name and name not in seen:
-            seen.add(name)
-            result.append(name)
-    return result[:40]
+    chosen: list[str] = []
+    for name in SOURCE_ENTRY_POINTS:
+        if name in file_names:
+            chosen.append(name)
+        if len(chosen) >= 2:
+            break
+
+    if not chosen:
+        for name in sorted(file_names):
+            ext = os.path.splitext(name)[1].lower()
+            if ext in SOURCE_EXTENSIONS:
+                chosen.append(name)
+            if len(chosen) >= 2:
+                break
+
+    return chosen
 
 
 def collect_repo_content(owner: str, repo: str) -> dict:
-    files: dict[str, str] = {}
+    meta = fetch_repo_metadata(owner, repo)
+    branch = meta["default_branch"]
+    entries = meta["entries"]
 
+    files: dict[str, str] = {}
     for filename in PRIORITY_FILES:
-        content = fetch_raw_file(owner, repo, filename)
+        content = fetch_raw_file(owner, repo, filename, branch)
         if content:
             files[filename] = content
 
-    directory_entries = fetch_directory_listing(owner, repo)
-    return {"files": files, "directory": directory_entries}
+    source_files: dict[str, str] = {}
+    for path in pick_source_files(entries):
+        content = fetch_raw_file(owner, repo, path, branch)
+        if content:
+            source_files[path] = content[:MAX_SOURCE_FILE_CHARS]
+
+    return {
+        "files": files,
+        "source_files": source_files,
+        "directory": [e["name"] for e in entries[:40]],
+    }
 
 
 def build_context(data: dict) -> str:
@@ -106,6 +175,7 @@ def build_context(data: dict) -> str:
     budget = MAX_CONTENT_CHARS
 
     files: dict[str, str] = data.get("files", {})
+    source_files: dict[str, str] = data.get("source_files", {})
     directory: list[str] = data.get("directory", [])
 
     if directory:
@@ -113,7 +183,7 @@ def build_context(data: dict) -> str:
         parts.append(dir_text)
         budget -= len(dir_text)
 
-    # Prioritize README first, then config files
+    # README first, then other manifest/config files
     ordered = []
     for name in PRIORITY_FILES:
         if name in files:
@@ -123,6 +193,18 @@ def build_context(data: dict) -> str:
         if budget <= 0:
             break
         header = f"\n--- {name} ---\n"
+        available = budget - len(header)
+        if available <= 0:
+            break
+        snippet = content[:available]
+        parts.append(header + snippet)
+        budget -= len(header) + len(snippet)
+
+    # Sampled source files fill whatever budget remains
+    for name, content in source_files.items():
+        if budget <= 0:
+            break
+        header = f"\n--- {name} (source sample) ---\n"
         available = budget - len(header)
         if available <= 0:
             break
@@ -198,7 +280,7 @@ def summarize(request: SummarizeRequest):
     except Exception as e:
         return JSONResponse(status_code=502, content={"status": "error", "message": f"Failed to fetch repository: {e}"})
 
-    if not data["files"] and not data["directory"]:
+    if not data["files"] and not data["directory"] and not data["source_files"]:
         return JSONResponse(status_code=404, content={
             "status": "error",
             "message": "Repository not found or is empty.",

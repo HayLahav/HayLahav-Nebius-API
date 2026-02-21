@@ -54,6 +54,12 @@ $env:NEBIUS_API_KEY="your-nebius-api-key-here"
 export NEBIUS_API_KEY="your-nebius-api-key-here"
 ```
 
+**Optional:** Set a GitHub personal access token to raise the GitHub API rate limit from 60 to 5,000 requests/hour:
+
+``` bash
+export GITHUB_TOKEN="your-github-token-here"
+```
+
 ### 5. Start the server
 
 ``` bash
@@ -157,16 +163,27 @@ high-signal files.
 
 #### Directory Layout
 
--   Scrapes the root directory listing from the GitHub UI\
+-   Uses the **GitHub REST API** (`/repos/{owner}/{repo}/contents/`) instead of HTML scraping\
+-   Also resolves the repository's actual **default branch** via the API, eliminating the `main`/`master` guessing loop\
 -   Helps infer project organization and architecture
+
+#### Source File Sampling
+
+-   After fetching manifests, the service picks up to **2 source files** from the root directory\
+-   Prefers well-known entry points (`main.py`, `app.js`, `main.go`, etc.); falls back to any file with a recognised source extension\
+-   Each sampled file is capped at **3,000 characters** so it fits within the overall context budget\
+-   Gives the LLM actual code signal for repos with thin or missing documentation
 
 ------------------------------------------------------------------------
 
 ### Context Management Strategy
 
 -   Total content sent to the LLM is capped at **12,000 characters**\
--   README content is prioritized first\
--   Configuration files follow\
+-   Content is added in priority order:
+    1.  Root directory listing (cheap, high-signal structural overview)
+    2.  README (highest-signal documentation)
+    3.  Manifest / config files (`requirements.txt`, `package.json`, etc.)
+    4.  Sampled source files (up to 3,000 chars each, fills remaining budget)\
 -   Ensures relevant architectural information is preserved\
 -   Prevents unnecessary latency and excessive token usage
 

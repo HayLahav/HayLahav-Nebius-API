@@ -75,7 +75,7 @@ The API will be available at:
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/summarize" `
   -Method Post `
   -ContentType "application/json" `
-  -Body '{"github_url": "https://github.com/HayLahav/HayLahav-Nebius-API"}' | ConvertTo-Json
+  -Body '{"github_url": "https://github.com/fill_here_url"}' | ConvertTo-Json
 ```
 
 ### Using cURL
@@ -87,6 +87,7 @@ curl -X POST http://localhost:8000/summarize   -H "Content-Type: application/jso
 ------------------------------------------------------------------------
 
 ## 📦 Example JSON Response
+-Body '{"github_url": "https://github.com/HayLahav/HayLahav-Nebius-API"}' | ConvertTo-Json
 
 ``` json
 {

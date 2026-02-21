@@ -7,7 +7,7 @@ A simple FastAPI service that takes a public GitHub repository URL and returns a
 ### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/HayLahav/HayLahav-Nebius-API
 cd HayLahav-Nebius-API
 ```
 

@@ -89,7 +89,9 @@ curl -X POST http://localhost:8000/summarize   -H "Content-Type: application/jso
 ------------------------------------------------------------------------
 
 ## 📦 Example JSON Response
--Body '{"github_url": "https://github.com/HayLahav/HayLahav-Nebius-API"}' | ConvertTo-Json
+ curl -X POST http://localhost:8000/summarize \
+> -H "Content-Type: application/json" \
+> -d '{"github_url": "https://github.com/HayLahav/HayLahav-Nebius-API"}'
 
 ``` json
 {

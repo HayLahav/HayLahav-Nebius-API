@@ -10,7 +10,7 @@ from pydantic import BaseModel
 app = FastAPI(title="GitHub Repository Summarizer")
 
 NEBIUS_BASE_URL = "https://api.studio.nebius.com/v1/"
-NEBIUS_MODEL = "meta-llama/Meta-Llama-3.1-70B-Instruct"
+NEBIUS_MODEL = "Meta-Llama-3.1-70B-Instruct"
 
 RAW_BASE = "https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
 GITHUB_REPO_URL = "https://github.com/{owner}/{repo}"
